@@ -63,6 +63,7 @@ jobs:
         run: chmod +x gradlew && ./gradlew --no-daemon testDebugUnitTest
 
       # Cloud device testing is handled by Revyl; do not boot an emulator in GitHub Actions.
+      # Verify the current Revyl API key through the upload step on each build.
       - name: Build debug APK
         run: ./gradlew --no-daemon assembleDebug
 
