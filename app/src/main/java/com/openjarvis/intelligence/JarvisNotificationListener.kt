@@ -53,9 +53,7 @@ class JarvisNotificationListener : NotificationListenerService() {
         
         scope.launch {
             try {
-                graphifyRepo?.logTask(
-                    "${parsed.packageName}: ${parsed.title}"
-                )
+                graphifyRepo?.logTask("${parsed.packageName}: ${parsed.title}", parsed.body.ifBlank { parsed.title })
             } catch (e: Exception) { }
         }
     }
