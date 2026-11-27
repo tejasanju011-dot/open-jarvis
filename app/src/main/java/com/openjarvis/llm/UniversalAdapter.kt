@@ -6,6 +6,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.openjarvis.llm.providers.*
 import com.openjarvis.local.ModelManager
+import java.security.MessageDigest
 
 data class SavedProviderSettings(
     val name: String,
@@ -82,6 +83,25 @@ class UniversalAdapter(private val context: Context) {
             putString("provider_model", model)
             apply()
         }
+    }
+
+    fun markConnectionVerified(name: String, baseUrl: String, apiKey: String, model: String) {
+        prefs.edit().putString(
+            "verified_provider_fingerprint",
+            providerFingerprint(name, baseUrl, apiKey, model)
+        ).apply()
+    }
+
+    fun isConnectionVerified(name: String, baseUrl: String, apiKey: String, model: String): Boolean {
+        val savedFingerprint = prefs.getString("verified_provider_fingerprint", null)
+        return savedFingerprint != null &&
+            savedFingerprint == providerFingerprint(name, baseUrl, apiKey, model)
+    }
+
+    private fun providerFingerprint(name: String, baseUrl: String, apiKey: String, model: String): String {
+        val input = listOf(name, baseUrl, apiKey, model).joinToString("|")
+        val digest = MessageDigest.getInstance("SHA-256").digest(input.toByteArray(Charsets.UTF_8))
+        return digest.joinToString("") { "%02x".format(it) }
     }
 
     fun getSavedSettings(): SavedProviderSettings {
