@@ -164,7 +164,7 @@ fun executeTask(cleanCommand: String) {
                         executeActions(actions)
                         
                         graphifyRepo.logTask(
-                            cleanCommand = cleanCommand,
+                            Command = cleanCommand,
                             result = "success",
                             provider = universalAdapter.getProviderName(),
                             latencyMs = latency
