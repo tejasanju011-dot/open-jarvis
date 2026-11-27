@@ -66,9 +66,15 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
-          target: default
+          target: google_apis
           arch: x86_64
           profile: pixel_2
+          cores: 2
+          ram-size: 2048
+          heap-size: 512
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
           script: ./gradlew --no-daemon connectedDebugAndroidTest
 
       - name: Build debug APK
