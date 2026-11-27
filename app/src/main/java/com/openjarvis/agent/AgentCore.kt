@@ -482,7 +482,7 @@ RULES:
     }
 
     private fun normalizeAppNavigationCommand(command: String): String {
-        val match = Regex("(?i)^\\\\s*(?:please\\\\s+)?go\\\\s+back\\\\s+to\\\\s+(.+?)\\\\s*$").matchEntire(command)
+        val match = Regex("""(?i)^\s*(?:please\s+)?go\s+back\s+to\s+(.+?)\s*$""").matchEntire(command)
         val target = match?.groupValues?.getOrNull(1)?.trim().orEmpty()
         return if (target.isNotBlank()) "open $target" else command
     }
