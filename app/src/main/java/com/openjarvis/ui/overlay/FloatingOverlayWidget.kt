@@ -19,7 +19,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.Icon
-import androidx.compose.material.Divider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
@@ -584,10 +583,11 @@ private fun InputRowWithVoice(
 
 @Composable
 private fun DividerLine() {
-    Divider(
-        modifier = Modifier.fillMaxWidth(),
-        thickness = 1.dp,
-        color = VoidColor.Void600
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(VoidColor.Void600)
     )
 }
 
