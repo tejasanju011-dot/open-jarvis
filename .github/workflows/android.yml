@@ -30,6 +30,12 @@ jobs:
       - name: Install Android SDK 34
         run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
+      - name: Restore persistent debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: open-jarvis-debug-keystore-v1-${{ github.repository }}-${{ github.ref_name }}
+
       - name: Build debug APK
         run: chmod +x gradlew && ./gradlew --no-daemon assembleDebug
 
