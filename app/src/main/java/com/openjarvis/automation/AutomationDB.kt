@@ -44,6 +44,100 @@ interface AutomationDao {
     suspend fun delete(id: String)
 }
 
+// Convert database entity into app model
+fun AutomationEntity.toAutomation(): AutomationManager.Automation {
+
+    val schedule = when (scheduleType) {
+        "daily" -> AutomationManager.AutomationSchedule.Daily(
+            scheduleHour,
+            scheduleMinute
+        )
+
+        "weekly" -> AutomationManager.AutomationSchedule.Weekly(
+            scheduleDayOfWeek,
+            scheduleHour,
+            scheduleMinute
+        )
+
+        "interval" -> AutomationManager.AutomationSchedule.Interval(
+            scheduleIntervalMs
+        )
+
+        "once" -> AutomationManager.AutomationSchedule.Once(
+            scheduleAtMs
+        )
+
+        else -> AutomationManager.AutomationSchedule.Daily(
+            scheduleHour,
+            scheduleMinute
+        )
+    }
+
+    return AutomationManager.Automation(
+        id = id,
+        name = name,
+        command = command,
+        schedule = schedule,
+        enabled = enabled,
+        lastRun = lastRun,
+        lastResult = lastResult,
+        runCount = runCount
+    )
+}
+
+// Convert app model into database entity
+fun AutomationManager.Automation.toEntity(): AutomationEntity {
+
+    var type = "daily"
+    var hour = 0
+    var minute = 0
+    var day = 0
+    var interval = 0L
+    var at = 0L
+
+    when (val s = schedule) {
+
+        is AutomationManager.AutomationSchedule.Daily -> {
+            type = "daily"
+            hour = s.hour
+            minute = s.minute
+        }
+
+        is AutomationManager.AutomationSchedule.Weekly -> {
+            type = "weekly"
+            day = s.dayOfWeek
+            hour = s.hour
+            minute = s.minute
+        }
+
+        is AutomationManager.AutomationSchedule.Interval -> {
+            type = "interval"
+            interval = s.intervalMs
+        }
+
+        is AutomationManager.AutomationSchedule.Once -> {
+            type = "once"
+            at = s.atMs
+        }
+    }
+
+    return AutomationEntity(
+        id = id,
+        name = name,
+        command = command,
+        scheduleType = type,
+        scheduleHour = hour,
+        scheduleMinute = minute,
+        scheduleDayOfWeek = day,
+        scheduleIntervalMs = interval,
+        scheduleAtMs = at,
+        enabled = enabled,
+        lastRun = lastRun,
+        lastResult = lastResult,
+        runCount = runCount
+    )
+}
+
 @Database(
     entities = [AutomationEntity::class],
     version = 1,
@@ -54,6 +148,7 @@ abstract class AutomationDB : RoomDatabase() {
     abstract fun automationDao(): AutomationDao
 
     companion object {
+
         @Volatile
         private var INSTANCE: AutomationDB? = null
 
@@ -63,9 +158,11 @@ abstract class AutomationDB : RoomDatabase() {
                     context.applicationContext,
                     AutomationDB::class.java,
                     "automations.db"
-                ).build().also {
-                    INSTANCE = it
-                }
+                )
+                    .build()
+                    .also {
+                        INSTANCE = it
+                    }
             }
         }
     }
@@ -76,32 +173,33 @@ class AutomationWorker(
     params: WorkerParameters
 ) : CoroutineWorker(context, params) {
 
-    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+    override suspend fun doWork(): Result =
+        withContext(Dispatchers.IO) {
 
-        val id = inputData.getString("automation_id")
-            ?: return@withContext Result.failure()
-
-        return@withContext try {
-            val dao = AutomationDB
-                .getInstance(applicationContext)
-                .automationDao()
-
-            val automation = dao.getById(id)
+            val id = inputData.getString("automation_id")
                 ?: return@withContext Result.failure()
 
-            val updated = automation.copy(
-                lastRun = System.currentTimeMillis(),
-                lastResult = "success",
-                runCount = automation.runCount + 1
-            )
+            try {
+                val dao = AutomationDB
+                    .getInstance(applicationContext)
+                    .automationDao()
 
-            dao.update(updated)
+                val automation = dao.getById(id)
+                    ?: return@withContext Result.failure()
 
-            Result.success()
+                val updated = automation.copy(
+                    lastRun = System.currentTimeMillis(),
+                    lastResult = "success",
+                    runCount = automation.runCount + 1
+                )
 
-        } catch (e: Exception) {
-            e.printStackTrace()
-            Result.failure()
+                dao.update(updated)
+
+                Result.success()
+
+            } catch (e: Exception) {
+                e.printStackTrace()
+                Result.failure()
+            }
         }
-    }
 }
