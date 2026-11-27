@@ -3,6 +3,9 @@ package com.openjarvis.ui.settings
 import android.content.ComponentName
 import android.content.Intent
 import android.provider.Settings
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
@@ -35,6 +38,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openjarvis.llm.UniversalAdapter
+import com.openjarvis.diagnostics.DiagnosticLogger
 import com.openjarvis.ui.theme.VoidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
@@ -61,7 +65,25 @@ fun SettingsScreen(
     var sttMode by remember { mutableStateOf("Push to Talk") }
     val settingsContext = LocalContext.current
 
+    val exportLogsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                settingsContext.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use {
+                    it.write(DiagnosticLogger.readAll(settingsContext))
+                } ?: error("Unable to open the selected file")
+            }.onSuccess {
+                Toast.makeText(settingsContext, "Diagnostic logs exported", Toast.LENGTH_LONG).show()
+            }.onFailure {
+                Toast.makeText(settingsContext, "Log export failed: ${it.message}", Toast.LENGTH_LONG).show()
+                DiagnosticLogger.error(settingsContext, "Diagnostic log export failed", it)
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
+        DiagnosticLogger.info(settingsContext, "Settings screen composed")
         val saved = UniversalAdapter(settingsContext).getSavedSettings()
         selectedProvider = saved.name
         baseUrl = saved.baseUrl
@@ -331,6 +353,35 @@ fun SettingsScreen(
                 
                 Spacer(modifier = Modifier.height(32.dp))
                 
+                SectionLabel("DIAGNOSTICS")
+                
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "Export a private diagnostic report to help troubleshoot crashes and connection issues. API keys are not included.",
+                    style = TextStyle(
+                        fontFamily = FontFamily.Default,
+                        fontWeight = FontWeight(400),
+                        fontSize = 11.sp,
+                        color = VoidColor.TextDisabled
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        DiagnosticLogger.info(settingsContext, "User requested diagnostic log export")
+                        exportLogsLauncher.launch("open-jarvis-diagnostics.txt")
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Export Diagnostic Logs")
+                }
+
+                Spacer(modifier = Modifier.height(32.dp))
+
                 SectionLabel("ABOUT")
                 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -655,7 +706,9 @@ private fun TestConnectionButton(
 
     OutlinedButton(
         onClick = {
+            DiagnosticLogger.info(context, "Provider connection test requested: provider=$providerName, model=$model")
             if (apiKey.isBlank() && providerName != "Ollama (Local)" && providerName != "Local (LlamaCpp)") {
+                DiagnosticLogger.warn(context, "Provider test blocked because API key is empty for $providerName")
                 testState = TestState.Error("Enter your API key")
             } else {
                 testState = TestState.Loading
@@ -667,13 +720,16 @@ private fun TestConnectionButton(
                             onSuccess = { latency ->
                                 onSave(providerName, baseUrl, apiKey, model)
                                 adapter.markConnectionVerified(providerName, baseUrl, apiKey, model)
+                                DiagnosticLogger.info(context, "Provider connection test succeeded: provider=$providerName, latencyMs=$latency")
                                 testState = TestState.Success(latency)
                             },
                             onFailure = { error ->
+                                DiagnosticLogger.warn(context, "Provider connection test failed: provider=$providerName, errorType=${error.javaClass.simpleName}")
                                 testState = TestState.Error(error.message ?: "Connection failed")
                             }
                         )
                     } catch (error: Exception) {
+                        DiagnosticLogger.error(context, "Unexpected provider test exception: provider=$providerName", error)
                         testState = TestState.Error(error.message ?: "Connection failed")
                     }
                 }
