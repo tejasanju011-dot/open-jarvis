@@ -48,6 +48,11 @@ sealed class AgentState {
 }
 
 object ActionJsonParser {
+    private fun optionalString(obj: JSONObject, key: String): String? {
+        if (!obj.has(key) || obj.isNull(key)) return null
+        return obj.optString(key).takeIf { it.isNotBlank() && it != "null" }
+    }
+
     fun parse(json: String): List<Action>? {
         return try {
             val clean = json
@@ -62,19 +67,19 @@ object ActionJsonParser {
                 val obj = jsonArray.getJSONObject(i)
                 Action(
                     action = obj.getString("action"),
-                    packageName = obj.optString("package", null).takeIf { it.isNotBlank() },
-                    label = obj.optString("label", null).takeIf { it.isNotBlank() },
-                    text = obj.optString("text", null).takeIf { it.isNotBlank() },
-                    value = obj.optString("value", null).takeIf { it.isNotBlank() },
-                    hint = obj.optString("hint", null).takeIf { it.isNotBlank() },
-                    direction = obj.optString("direction", null).takeIf { it.isNotBlank() },
+                    packageName = optionalString(obj, "package"),
+                    label = optionalString(obj, "label"),
+                    text = optionalString(obj, "text"),
+                    value = optionalString(obj, "value"),
+                    hint = optionalString(obj, "hint"),
+                    direction = optionalString(obj, "direction"),
                     x = if (obj.has("x")) obj.getInt("x") else null,
                     y = if (obj.has("y")) obj.getInt("y") else null,
-                    distance = obj.optString("distance", null).takeIf { it.isNotBlank() },
+                    distance = optionalString(obj, "distance"),
                     timeoutMs = obj.optLong("timeout_ms", 3000L),
-                    message = obj.optString("message", null).takeIf { it.isNotBlank() },
-                    prompt = obj.optString("prompt", null).takeIf { it.isNotBlank() },
-                    outputKey = obj.optString("outputKey", null).takeIf { it.isNotBlank() }
+                    message = optionalString(obj, "message"),
+                    prompt = optionalString(obj, "prompt"),
+                    outputKey = optionalString(obj, "outputKey")
                 )
             }
         } catch (e: Exception) {
