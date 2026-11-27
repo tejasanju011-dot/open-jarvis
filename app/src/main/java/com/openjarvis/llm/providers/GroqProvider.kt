@@ -49,18 +49,27 @@ class GroqProvider(
                 .build()
             
             HttpClient.client.newCall(request).execute().use { response ->
-                val body = response.body?.string() ?: throw Exception("Empty response")
-                val json = JSONObject(body)
-                if (json.has("choices")) {
-                    json.getJSONArray("choices")
-                        .getJSONObject(0)
-                        .getJSONObject("message")
-                        .getString("content")
-                } else if (json.has("error")) {
-                    throw Exception(json.getJSONObject("error").getString("message"))
-                } else {
-                    throw Exception("Unknown response: $body")
+                val body = response.body?.string().orEmpty()
+                val json = runCatching { JSONObject(body) }.getOrNull()
+
+                if (!response.isSuccessful) {
+                    val errorObject = json?.optJSONObject("error")
+                    val detail = errorObject?.optString("message")
+                        ?.takeIf { !it.isNullOrBlank() }
+                        ?: json?.optString("message")?.takeIf { !it.isNullOrBlank() }
+                        ?: body.take(400).ifBlank { "No error details returned" }
+                    throw Exception("Groq HTTP ${response.code}: $detail")
                 }
+
+                val choices = json?.optJSONArray("choices")
+                    ?: throw Exception("Groq returned HTTP ${response.code} but no choices. Response: ${body.take(400)}")
+                if (choices.length() == 0) {
+                    throw Exception("Groq returned an empty choices list")
+                }
+                val message = choices.getJSONObject(0).optJSONObject("message")
+                    ?: throw Exception("Groq response did not contain a message")
+                message.optString("content").takeIf { it.isNotBlank() }
+                    ?: throw Exception("Groq returned an empty message")
             }
         }
     }
