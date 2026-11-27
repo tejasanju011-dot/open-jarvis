@@ -86,7 +86,7 @@ fun executeTask(cleanCommand: String) {
         workingMemory = TaskWorkingMemory()
         
         scope.launch {
-            taskMutex.withLock {
+            return@withLock{
                 try {
                     val sanitized = PromptSanitizer.sanitize(cleanCommand)
                     when (sanitized) {
@@ -192,7 +192,6 @@ fun executeTask(cleanCommand: String) {
             }
         }
     }
-}
     suspend fun testConnection(): Result<Long> {
         return universalAdapter.testConnection()
     }
