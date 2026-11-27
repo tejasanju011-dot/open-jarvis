@@ -341,8 +341,22 @@ RULES:
                         return
                     }
 
-                    service.openAppByPackage(packageName)
+                    val launched = service.openAppByPackage(packageName)
+                    if (!launched) {
+                        DiagnosticLogger.error(
+                            context,
+                            "App launch failed: package=$packageName, label=${action.label ?: "<unknown>"}"
+                        )
+                        _state.value = AgentState.Error(
+                            "Could not open ${action.label ?: packageName}. Check that the app is installed and try again."
+                        )
+                        return
+                    }
 
+                    DiagnosticLogger.info(
+                        context,
+                        "App launch request accepted: package=$packageName"
+                    )
                     graphifyRepo.logAppOpened(
                         packageName,
                         action.label ?: packageName
