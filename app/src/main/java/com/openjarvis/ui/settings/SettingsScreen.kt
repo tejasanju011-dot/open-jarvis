@@ -59,6 +59,15 @@ fun SettingsScreen(
     var speakResults by remember { mutableStateOf(true) }
     var speechRate by remember { mutableStateOf(1.05f) }
     var sttMode by remember { mutableStateOf("Push to Talk") }
+    val settingsContext = LocalContext.current
+
+    LaunchedEffect(Unit) {
+        val saved = UniversalAdapter(settingsContext).getSavedSettings()
+        selectedProvider = saved.name
+        baseUrl = saved.baseUrl
+        apiKey = saved.apiKey
+        model = saved.model
+    }
     
     LaunchedEffect(selectedProvider) {
         showBaseUrlField = selectedProvider == "Custom"
