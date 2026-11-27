@@ -47,6 +47,7 @@ class MainActivity : ComponentActivity() {
             OpenJarvisTheme {
                 val context = LocalContext.current
                 var recentTasks by remember { mutableStateOf<List<TaskNode>>(emptyList()) }
+                var showCommandScreen by remember { mutableStateOf(false) }
                 
                 LaunchedEffect(Unit) {
                     recentTasks = graphifyRepo.getRecentTasks(10)
@@ -64,10 +65,16 @@ class MainActivity : ComponentActivity() {
                         onEnableAccessibility = { startAccessibilitySettings() },
                         onEnableOverlay = { startOverlaySettings() }
                     )
+                } else if (showCommandScreen) {
+                    CommandScreen(
+                        agentCore = agentCore,
+                        onBack = { showCommandScreen = false }
+                    )
                 } else {
                     DashboardScreen(
                         onStartOverlay = { startOverlayService() },
                         onOpenSettings = { openSettings() },
+                        onOpenTasks = { showCommandScreen = true },
                         graphifyRepo = graphifyRepo,
                         modifier = Modifier.fillMaxSize()
                     )
