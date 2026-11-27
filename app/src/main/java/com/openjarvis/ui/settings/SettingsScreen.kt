@@ -11,8 +11,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.*
@@ -323,7 +323,7 @@ private fun SettingsHeader(onNavigateBack: () -> Unit) {
     ) {
         IconButton(onClick = onNavigateBack) {
             Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                imageVector = Icons.Filled.KeyboardArrowLeft,
                 contentDescription = "Back",
                 tint = VoidColor.TextSecondary
             )
@@ -411,7 +411,7 @@ private fun ProviderSelectorCard(
             )
             
             Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                imageVector = Icons.Filled.KeyboardArrowRight,
                 contentDescription = null,
                 tint = VoidColor.TextDisabled,
                 modifier = Modifier.graphicsLayer(rotationZ = rotationAngle)
@@ -539,6 +539,7 @@ fun FloatingLabelTextField(
         color = VoidColor.Void900,
         border = BorderStroke(1.dp, borderColor)
     ) {
+        val density = LocalDensity.current
         Box(modifier = Modifier.fillMaxSize()) {
             Text(
                 text = label,
@@ -549,7 +550,7 @@ fun FloatingLabelTextField(
                     color = VoidColor.TextSecondary
                 ),
                 modifier = Modifier.graphicsLayer {
-    translationY = labelOffset * LocalDensity.current.density
+    translationY = labelOffset * density.density
     scaleX = labelScale
     scaleY = labelScale
                 }
