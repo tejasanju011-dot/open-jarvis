@@ -4,7 +4,6 @@ import android.content.Context
 import com.openjarvis.graphify.nodes.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.security.MessageDigest
 import java.util.Calendar
 
 class AnalysisEngine(context: Context) {
@@ -23,11 +22,7 @@ class AnalysisEngine(context: Context) {
     private suspend fun detectSequencePatterns(tasks: List<TaskNode>) {
         if (tasks.size < 3) return
 
-        val sequences = mutableListOf<String>()
-        for (i in 0 until tasks.size - 2) {
-            sequences.add(listOf(tasks[i].command, tasks[i + 1].command, tasks[i + 2].command)
-                .joinToString(" → "))
-        }
+        val sequences = AnalysisAlgorithms.buildSequences(tasks.map { it.command })
 
         val hashCounts = mutableMapOf<String, Int>()
         for (seq in sequences) {
@@ -51,7 +46,7 @@ class AnalysisEngine(context: Context) {
 
                     repo.insertPattern(
                         PatternNode(
-                            sequenceHash = hashSequence(sequence),
+                            sequenceHash = AnalysisAlgorithms.hashSequence(sequence),
                             sequenceString = sequence,
                             occurrenceCount = count,
                             lastSeen = now,
