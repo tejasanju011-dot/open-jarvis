@@ -1,8 +1,8 @@
+
 package com.openjarvis.agent
 
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import com.openjarvis.accessibility.JarvisAccessibilityService
 import com.openjarvis.accessibility.ScreenReader
@@ -14,27 +14,27 @@ import com.openjarvis.intelligence.AppAnalyzer
 import com.openjarvis.intelligence.TaskRouter
 import com.openjarvis.intelligence.TaskWorkingMemory
 import com.openjarvis.llm.UniversalAdapter
-import com.openjarvis.vision.VisionModule
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 class AgentCore(private val context: Context) {
 
     private val graphifyRepo = GraphifyRepository(context)
     private val analysisEngine = AnalysisEngine(context)
     private val universalAdapter = UniversalAdapter(context)
-    private val screenReader = ScreenReader(context)
-    private val visionModule = VisionModule.getInstance(context)
     private val taskRouter = TaskRouter(context)
     private val appAnalyzer = AppAnalyzer(context)
     private val aiAppInteractor = AIAppInteractor(context)
+
     private var workingMemory = TaskWorkingMemory()
+
     private val scope = CoroutineScope(Dispatchers.IO)
     private val taskMutex = Mutex()
 
@@ -43,261 +43,417 @@ class AgentCore(private val context: Context) {
 
     private val systemPrompt = """
 You are Open Jarvis — an Android device control AI agent.
-The user gives you a cleanCommand in natural language.
-You must respond with ONLY a valid JSON array of actions. No explanation. No markdown fences. No preamble. Pure JSON array only.
+The user gives you a command in natural language.
+Respond with ONLY a valid JSON array of actions.
 
 AVAILABLE ACTIONS:
-open_app     → {"action":"open_app","package":"com.package","label":"AppName"}
-tap          → {"action":"tap","text":"Button text on screen"}
-tap_coords   → {"action":"tap_coords","x":540,"y":960}
-long_press   → {"action":"long_press","text":"Element text"}
-type         → {"action":"type","value":"text to type"}
-clear_type   → {"action":"clear_type","value":"clears field then types"}
-swipe        → {"action":"swipe","direction":"up|down|left|right","distance":"short|medium|long"}
-scroll       → {"action":"scroll","direction":"up|down"}
-press_back   → {"action":"press_back"}
-press_home   → {"action":"press_home"}
+open_app → {"action":"open_app","package":"com.package","label":"AppName"}
+tap → {"action":"tap","text":"Button text"}
+type → {"action":"type","value":"text to type"}
+press_back → {"action":"press_back"}
+press_home → {"action":"press_home"}
 press_recents → {"action":"press_recents"}
-wait_for     → {"action":"wait_for","text":"expected text","timeout_ms":3000}
-screenshot   → {"action":"screenshot"}
-read_screen  → {"action":"read_screen"}
-ai_prompt    → {"action":"ai_prompt","package":"com.openai.chatgpt","prompt":"{prompt}","outputKey":"result"}
+ai_prompt → {"action":"ai_prompt","package":"com.openai.chatgpt","prompt":"prompt","outputKey":"result"}
 extract_text → {"action":"extract_text","outputKey":"page_text"}
+error → {"action":"error","message":"reason"}
 
 CURRENT SCREEN CONTENT: {SCREEN_OCR}
-
 APP SELECTION REASONING: {APP_REASONING}
-
 INSTALLED AI APPS: {AI_APPS}
-
 RECENT MEMORY CONTEXT: {GRAPHIFY_CONTEXT}
 
 RULES:
-- Always start complex tasks with open_app
-- Add wait_for after open_app to confirm app loaded
-- If screen content is empty or unclear, add read_screen as first action
-- Never assume UI state — always verify with wait_for
-- Keep action arrays short: 2-8 steps per task
-- Use ai_prompt to delegate complex reasoning to installed AI apps
-- If a task is impossible to do safely, return: [{"action":"error","message":"reason"}]
+- Always verify the screen before acting.
+- Keep action arrays short.
+- Return JSON only.
 """.trimIndent()
 
-fun executeTask(cleanCommand: String) {
+    private fun getScreenReader(): ScreenReader? {
+        val service = JarvisAccessibilityService.instance ?: return null
+        return ScreenReader(service)
+    }
+
+    fun executeTask(cleanCommand: String) {
         workingMemory = TaskWorkingMemory()
-        
+
         scope.launch {
-            return@withLock{
+            taskMutex.withLock {
                 try {
                     val sanitized = PromptSanitizer.sanitize(cleanCommand)
+
                     when (sanitized) {
                         is PromptSanitizer.SanitizeResult.Rejected -> {
                             _state.value = AgentState.Error(sanitized.reason)
-                            return@taskMutex.withLock
+                            return@withLock
                         }
+
                         is PromptSanitizer.SanitizeResult.Suspicious -> {
-                            _state.value = AgentState.Running("analyzing...")
+                            _state.value = AgentState.Running("Analyzing command...")
                         }
-                        is PromptSanitizer.SanitizeResult.Clean -> { }
+
+                        is PromptSanitizer.SanitizeResult.Clean -> {}
                     }
-                    
-                    val cleanCommand = when (sanitized) {
-                        is PromptSanitizer.SanitizeResult.Suspicious -> sanitized.sanitized
-                        is PromptSanitizer.SanitizeResult.Clean -> sanitized.text
+
+                    val commandToRun = when (sanitized) {
+                        is PromptSanitizer.SanitizeResult.Suspicious ->
+                            sanitized.sanitized
+
+                        is PromptSanitizer.SanitizeResult.Clean ->
+                            sanitized.text
+
                         else -> cleanCommand
                     }
-                    
-                    _state.value = AgentState.Running("analyzing task...")
-                
-                val plan = taskRouter.analyze(cleanCommand)
-                
-                _state.value = AgentState.Running("reading screen...")
-                
-                val screenText = withContext(Dispatchers.IO) {
-                    screenReader.extractAllText()
-                }
-                
-                _state.value = AgentState.Running("getting context...")
-                
-                val memoryContext = graphifyRepo.buildMemoryContext(cleanCommand)
-                
-                val fullSystem = systemPrompt
-                    .replace("{SCREEN_OCR}", screenText.take(2000))
-                    .replace("{APP_REASONING}", plan.reasoning)
-                    .replace("{AI_APPS}", getInstalledAIApps())
-                    .replace("{GRAPHIFY_CONTEXT}", if (memoryContext.isBlank()) "No recent tasks" else memoryContext)
-                
-                _state.value = AgentState.Running("thinking...")
-                
-                val startTime = System.currentTimeMillis()
-                
-                val result = universalAdapter.complete(fullSystem, cleanCommand)
-                result.fold(
-                    onSuccess = { rawJson ->
-                        val latency = System.currentTimeMillis() - startTime
-                        
-                        val validation = LLMResponseValidator.validate(rawJson)
-                        val rawForParsing = if (!validation.isValid && validation.errors.isNotEmpty()) {
-                            _state.value = AgentState.Error("Invalid response: ${validation.errors.first()}")
-                            graphifyRepo.logTask(cleanCommand, "failed: validation error", "", 0)
-                            return@fold
-                        } else {
-                            rawJson
-                        }
-                        
-                        val actions = ActionJsonParser.parse(rawForParsing)
-                            ?: run {
+
+                    _state.value = AgentState.Running("Analyzing task...")
+
+                    val plan = taskRouter.analyze(commandToRun)
+
+                    _state.value = AgentState.Running("Reading screen...")
+
+                    val screenText = withContext(Dispatchers.IO) {
+                        getScreenReader()?.extractAllText() ?: ""
+                    }
+
+                    _state.value = AgentState.Running("Getting context...")
+
+                    val memoryContext =
+                        graphifyRepo.buildMemoryContext(commandToRun)
+
+                    val fullSystem = systemPrompt
+                        .replace("{SCREEN_OCR}", screenText.take(2000))
+                        .replace("{APP_REASONING}", plan.reasoning)
+                        .replace("{AI_APPS}", getInstalledAIApps())
+                        .replace(
+                            "{GRAPHIFY_CONTEXT}",
+                            if (memoryContext.isBlank()) {
+                                "No recent tasks"
+                            } else {
+                                memoryContext
+                            }
+                        )
+
+                    _state.value = AgentState.Running("Thinking...")
+
+                    val startTime = System.currentTimeMillis()
+
+                    val result = universalAdapter.complete(
+                        fullSystem,
+                        commandToRun
+                    )
+
+                    result.fold(
+                        onSuccess = { rawJson ->
+
+                            val latency =
+                                System.currentTimeMillis() - startTime
+
+                            val validation =
+                                LLMResponseValidator.validate(rawJson)
+
+                            if (!validation.isValid) {
+                                _state.value = AgentState.Error(
+                                    "Invalid response: ${
+                                        validation.errors.firstOrNull()
+                                            ?: "Unknown validation error"
+                                    }"
+                                )
+
+                                graphifyRepo.logTask(
+                                    commandToRun,
+                                    "failed: validation error",
+                                    "",
+                                    0L
+                                )
+
+                                return@fold
+                            }
+
+                            var actions = ActionJsonParser.parse(rawJson)
+
+                            if (actions == null) {
                                 val retry = universalAdapter.complete(
                                     fullSystem,
-                                    "$cleanCommand\n\nRespond with JSON array ONLY. No other text."
+                                    "$commandToRun\nRespond with JSON array only."
                                 )
-                                retry.getOrNull()?.let { ActionJsonParser.parse(it) }
+
+                                actions = retry.getOrNull()?.let {
+                                    ActionJsonParser.parse(it)
+                                }
                             }
-                        
-                        if (actions == null) {
-                            _state.value = AgentState.Error("Could not parse AI response")
-                            graphifyRepo.logTask(cleanCommand, "failed: parse error", "", 0)
-                            return@fold
+
+                            if (actions == null) {
+                                _state.value = AgentState.Error(
+                                    "Could not parse AI response"
+                                )
+
+                                graphifyRepo.logTask(
+                                    commandToRun,
+                                    "failed: parse error",
+                                    "",
+                                    0L
+                                )
+
+                                return@fold
+                            }
+
+                            _state.value = AgentState.Running(
+                                "Executing ${actions.size} actions..."
+                            )
+
+                            executeActions(actions)
+
+                            if (_state.value !is AgentState.Error) {
+                                graphifyRepo.logTask(
+                                    command = commandToRun,
+                                    result = "success",
+                                    provider = universalAdapter.getProviderName(),
+                                    latencyMs = latency
+                                )
+
+                                analysisEngine.analyzeLastTask()
+
+                                _state.value = AgentState.Done(
+                                    "Done in ${latency}ms"
+                                )
+                            }
+                        },
+
+                        onFailure = { error ->
+
+                            val msg = when {
+                                error.message?.contains("401") == true ->
+                                    "Invalid API key"
+
+                                error.message?.contains("429") == true ->
+                                    "Rate limited — wait a moment"
+
+                                error.message?.contains("timeout") == true ->
+                                    "Request timed out"
+
+                                error.message?.contains("Unable to resolve") == true ->
+                                    "Network error — check connection"
+
+                                else ->
+                                    error.message ?: "Unknown error"
+                            }
+
+                            _state.value = AgentState.Error(msg)
+
+                            graphifyRepo.logTask(
+                                commandToRun,
+                                "failed: $msg",
+                                "",
+                                0L
+                            )
                         }
-                        
-                        _state.value = AgentState.Running("executing ${actions.size} actions...")
-                        
-                        executeActions(actions)
-                        
-                        graphifyRepo.logTask(
-                            Command = cleanCommand,
-                            result = "success",
-                            provider = universalAdapter.getProviderName(),
-                            latencyMs = latency
-                        )
-                        
-                        analysisEngine.analyzeLastTask()
-                        
-                        _state.value = AgentState.Done("done in ${latency}ms")
-                    },
-                    onFailure = { error ->
-                        val msg = when {
-                            error.message?.contains("401") == true -> "Invalid API key"
-                            error.message?.contains("429") == true -> "Rate limited — wait a moment"
-                            error.message?.contains("timeout") == true -> "Request timed out"
-                            error.message?.contains("Unable to resolve") == true -> "Network error — check connection"
-                            else -> error.message ?: "Unknown error"
-                        }
-                        _state.value = AgentState.Error(msg)
-                        graphifyRepo.logTask(cleanCommand, "failed: $msg", "", 0)
-                    }
-                )
-            } catch (e: Exception) {
-                _state.value = AgentState.Error(e.message ?: "Unknown error")
-                graphifyRepo.logTask(cleanCommand, "failed: ${e.message}", "", 0)
+                    )
+
+                } catch (e: Exception) {
+
+                    _state.value = AgentState.Error(
+                        e.message ?: "Unknown error"
+                    )
+
+                    graphifyRepo.logTask(
+                        cleanCommand,
+                        "failed: ${e.message}",
+                        "",
+                        0L
+                    )
+                }
             }
         }
     }
+
     suspend fun testConnection(): Result<Long> {
         return universalAdapter.testConnection()
     }
-    
+
     fun getCurrentProviderName(): String {
         return universalAdapter.getProviderName()
     }
-    
+
     fun getStateFlow(): StateFlow<AgentState> = state
-    
+
     private fun getInstalledAIApps(): String {
         return AIApps.KNOWN_AI_APPS.keys.joinToString(", ")
     }
-    
-    suspend fun getAnalyzedAppCount(): Int = appAnalyzer.getAnalyzedCount()
-    
-    suspend fun getAIAppCount(): Int = appAnalyzer.getAICount()
+
+    suspend fun getAnalyzedAppCount(): Int {
+        return appAnalyzer.getAnalyzedCount()
+    }
+
+    suspend fun getAIAppCount(): Int {
+        return appAnalyzer.getAICount()
+    }
 
     private suspend fun executeActions(actions: List<Action>) {
+
         for ((index, action) in actions.withIndex()) {
-            _state.value = AgentState.Running("action ${index + 1}/${actions.size}")
-            
+
+            _state.value = AgentState.Running(
+                "Action ${index + 1}/${actions.size}"
+            )
+
+            val service = JarvisAccessibilityService.instance
+
             when (action.action) {
+
                 Action.OPEN_APP -> {
-                    val label = action.label
-                    if (label != null) {
-                        val packageName = findPackageByLabel(label)
-                        if (packageName != null) {
-                            JarvisAccessibilityService.instance?.openAppByPackage(packageName)
-                            graphifyRepo.logAppOpened(packageName, label)
-                        } else {
-                            _state.value = AgentState.Error("App not found: $label")
-                            return
-                        }
-                    }
-                }
-                Action.TAP -> {
-                    action.text?.let { text ->
-                        JarvisAccessibilityService.instance?.tapByText(text)
-                    }
-                }
-                Action.TYPE -> {
-                    action.value?.let { value ->
-                        JarvisAccessibilityService.instance?.typeText(value)
-                    }
-                }
-                Action.PRESS_BACK -> {
-                    JarvisAccessibilityService.instance?.pressBack()
-                }
-                Action.PRESS_HOME -> {
-                    JarvisAccessibilityService.instance?.pressHome()
-                }
-                Action.PRESS_RECENTS -> {
-                    JarvisAccessibilityService.instance?.pressRecents()
-                }
-                Action.AI_PROMPT -> {
                     val packageName = action.packageName
-                    val prompt = workingMemory.interpolate(action.prompt ?: "")
+                        ?: action.label?.let {
+                            findPackageByLabel(it)
+                        }
+
+                    if (packageName == null) {
+                        _state.value = AgentState.Error(
+                            "App not found: ${action.label ?: "Unknown"}"
+                        )
+                        return
+                    }
+
+                    if (service == null) {
+                        _state.value = AgentState.Error(
+                            "Accessibility service is not enabled"
+                        )
+                        return
+                    }
+
+                    service.openAppByPackage(packageName)
+
+                    graphifyRepo.logAppOpened(
+                        packageName,
+                        action.label ?: packageName
+                    )
+                }
+
+                Action.TAP -> {
+                    if (service == null) {
+                        _state.value = AgentState.Error(
+                            "Accessibility service is not enabled"
+                        )
+                        return
+                    }
+
+                    action.text?.let {
+                        service.tapByText(it)
+                    }
+                }
+
+                Action.TYPE -> {
+                    if (service == null) {
+                        _state.value = AgentState.Error(
+                            "Accessibility service is not enabled"
+                        )
+                        return
+                    }
+
+                    action.value?.let {
+                        service.typeText(it)
+                    }
+                }
+
+                Action.PRESS_BACK -> {
+                    service?.pressBack()
+                }
+
+                Action.PRESS_HOME -> {
+                    service?.pressHome()
+                }
+
+                Action.PRESS_RECENTS -> {
+                    service?.pressRecents()
+                }
+
+                Action.AI_PROMPT -> {
+
+                    val packageName = action.packageName
+                    val prompt = workingMemory.interpolate(
+                        action.prompt ?: ""
+                    )
+
                     val outputKey = action.outputKey
-                    
+
                     if (packageName != null) {
                         val meta = AIApps.KNOWN_AI_APPS[packageName]
+
                         if (meta != null) {
                             aiAppInteractor.openAIApp(meta)
-                            kotlinx.coroutines.delay(2000)
+
+                            delay(2000)
+
                             aiAppInteractor.typePrompt(prompt)
-                            kotlinx.coroutines.delay(1000)
-                            val response = aiAppInteractor.waitForResponse()
+
+                            delay(1000)
+
+                            val response =
+                                aiAppInteractor.waitForResponse()
+
                             if (outputKey != null) {
                                 workingMemory.set(outputKey, response)
                             }
                         }
                     }
                 }
+
                 Action.EXTRACT_TEXT -> {
-                    val outputKey = action.outputKey ?: "page_text"
-                    val text = screenReader.extractAllText()
+
+                    val outputKey =
+                        action.outputKey ?: "page_text"
+
+                    val text = getScreenReader()?.extractAllText() ?: ""
+
                     workingMemory.set(outputKey, text)
                 }
+
                 Action.ERROR -> {
-                    _state.value = AgentState.Error(action.message ?: "Task failed")
+                    _state.value = AgentState.Error(
+                        action.message ?: "Task failed"
+                    )
+                    return
+                }
+
+                else -> {
+                    _state.value = AgentState.Error(
+                        "Unsupported action: ${action.action}"
+                    )
                     return
                 }
             }
-            
-            kotlinx.coroutines.delay(500)
+
+            delay(500)
         }
     }
 
     private fun findPackageByLabel(label: String): String? {
+
         val pm = context.packageManager
-        val intent = Intent(Intent.ACTION_MAIN, null).apply {
+
+        val intent = Intent(
+            Intent.ACTION_MAIN,
+            null
+        ).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
         }
-        
-        val apps: List<ResolveInfo> = pm.queryIntentActivities(intent, 0)
-        
+
+        val apps: List<ResolveInfo> =
+            pm.queryIntentActivities(intent, 0)
+
         val normalizedLabel = label.lowercase().trim()
-        
+
         for (app in apps) {
-            val appLabel = app.loadLabel(pm).toString().lowercase()
-            if (appLabel == normalizedLabel || appLabel.contains(normalizedLabel) || normalizedLabel.contains(appLabel)) {
+            val appLabel =
+                app.loadLabel(pm).toString().lowercase()
+
+            if (
+                appLabel == normalizedLabel ||
+                appLabel.contains(normalizedLabel) ||
+                normalizedLabel.contains(appLabel)
+            ) {
                 return app.activityInfo.packageName
             }
         }
-        
+
         return null
     }
 }
