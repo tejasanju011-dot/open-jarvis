@@ -1,5 +1,8 @@
 package com.openjarvis.ui.settings
 
+import android.content.ComponentName
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
@@ -280,16 +283,41 @@ fun SettingsScreen(
                 
                 Spacer(modifier = Modifier.height(12.dp))
                 
+                val permissionContext = LocalContext.current
+                val enabledServices = Settings.Secure.getString(
+                    permissionContext.contentResolver,
+                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+                ).orEmpty()
+                val accessibilityComponent = ComponentName(
+                    permissionContext,
+                    com.openjarvis.accessibility.JarvisAccessibilityService::class.java
+                ).flattenToString()
+                val accessibilityGranted = enabledServices.contains(accessibilityComponent)
+                val overlayGranted = Settings.canDrawOverlays(permissionContext)
+
                 PermissionRow(
                     title = "Accessibility",
-                    subtitle = "Required — Tap to enable"
+                    isGranted = accessibilityGranted,
+                    onClick = {
+                        permissionContext.startActivity(
+                            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        )
+                    }
                 )
                 
                 Spacer(modifier = Modifier.height(12.dp))
                 
                 PermissionRow(
                     title = "Overlay",
-                    subtitle = "Required — Tap to enable"
+                    isGranted = overlayGranted,
+                    onClick = {
+                        permissionContext.startActivity(
+                            Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                android.net.Uri.parse("package:${permissionContext.packageName}")
+                            )
+                        )
+                    }
                 )
                 
                 Spacer(modifier = Modifier.height(32.dp))
@@ -736,14 +764,17 @@ private fun SettingsToggleRow(
 @Composable
 private fun PermissionRow(
     title: String,
-    subtitle: String
+    isGranted: Boolean,
+    onClick: () -> Unit
 ) {
-    val isGranted by remember { mutableStateOf(false) }
-    
+    val statusColor = if (isGranted) VoidColor.Green else VoidColor.Red
+    val statusText = if (isGranted) "Enabled" else "Tap to enable"
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(64.dp),
+            .height(64.dp)
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         color = VoidColor.Void900,
         border = BorderStroke(1.dp, VoidColor.BorderSubtle)
@@ -758,19 +789,19 @@ private fun PermissionRow(
                 modifier = Modifier
                     .size(36.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(VoidColor.Red.copy(alpha = 0.12f)),
+                    .background(statusColor.copy(alpha = 0.12f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = null,
-                    tint = VoidColor.Red,
+                    tint = statusColor,
                     modifier = Modifier.size(20.dp)
                 )
             }
-            
+
             Spacer(modifier = Modifier.width(16.dp))
-            
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
@@ -782,20 +813,20 @@ private fun PermissionRow(
                     )
                 )
                 Text(
-                    text = subtitle,
+                    text = statusText,
                     style = TextStyle(
                         fontFamily = FontFamily.Default,
                         fontWeight = FontWeight(400),
                         fontSize = 11.sp,
-                        color = VoidColor.Red
+                        color = statusColor
                     )
                 )
             }
-            
+
             Icon(
                 imageVector = Icons.Filled.KeyboardArrowRight,
                 contentDescription = null,
-                tint = VoidColor.Red
+                tint = statusColor
             )
         }
     }
