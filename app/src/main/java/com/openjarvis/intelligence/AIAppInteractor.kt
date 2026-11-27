@@ -1,3 +1,4 @@
+
 package com.openjarvis.intelligence
 
 import android.content.Context
@@ -6,38 +7,52 @@ import com.openjarvis.accessibility.ScreenReader
 import kotlinx.coroutines.delay
 
 class AIAppInteractor(private val context: Context) {
-    
-    private val screenReader = ScreenReader(context)
+
     private val workingMemory = TaskWorkingMemory()
-    
-    fun openAIApp(meta: AIAppMeta): Boolean {
-        return JarvisAccessibilityService.instance?.openAppByPackage(meta.packageName) ?: false
+
+    private fun getScreenReader(): ScreenReader? {
+        val service = JarvisAccessibilityService.instance ?: return null
+        return ScreenReader(service)
     }
-    
+
+    fun openAIApp(meta: AIAppMeta): Boolean {
+        val service = JarvisAccessibilityService.instance ?: return false
+
+        val launchIntent = context.packageManager
+            .getLaunchIntentForPackage(meta.packageName)
+            ?: return false
+
+        service.openAppByPackage(meta.packageName)
+        return true
+    }
+
     fun clearContext() {
         try {
             JarvisAccessibilityService.instance?.pressBack()
-            delay(300)
-        } catch (e: Exception) { }
+        } catch (e: Exception) {
+            // Ignore accessibility errors
+        }
     }
-    
+
     fun typePrompt(prompt: String): Boolean {
-        return JarvisAccessibilityService.instance?.typeText(prompt) ?: false
+        return JarvisAccessibilityService.instance
+            ?.typeText(prompt) ?: false
     }
-    
+
     suspend fun waitForResponse(timeoutMs: Long = 60_000): String {
         val startTime = System.currentTimeMillis()
         var lastText = ""
         var sameCount = 0
-        
+
         while (System.currentTimeMillis() - startTime < timeoutMs) {
             delay(1000)
-            
-            val currentText = screenReader.extractAllText()
-            
+
+            val currentText = getScreenReader()?.extractAllText() ?: return lastText
+
             if (currentText == lastText) {
                 sameCount++
-                if (sameCount >= 2) {
+
+                if (sameCount >= 2 && currentText.isNotBlank()) {
                     return currentText
                 }
             } else {
@@ -45,35 +60,39 @@ class AIAppInteractor(private val context: Context) {
                 lastText = currentText
             }
         }
-        
+
         return lastText
     }
-    
+
     fun extractResponse(meta: AIAppMeta): String {
-        when (meta.responseExtraction) {
+        val reader = getScreenReader() ?: return ""
+
+        return when (meta.responseExtraction) {
             ResponseExtraction.SCREEN_TEXT -> {
-                return screenReader.extractAllText()
+                reader.extractAllText()
             }
+
             ResponseExtraction.OCR_REQUIRED -> {
-                return screenReader.extractAllText()
+                reader.extractAllText()
             }
+
             ResponseExtraction.COPY_BUTTON -> {
-                return tryCopyFromUI()
+                tryCopyFromUI(reader)
             }
+
             ResponseExtraction.SHARE_MENU -> {
-                return tryShareFromUI()
+                tryShareFromUI(reader)
             }
         }
-        return ""
     }
-    
+
     fun getWorkingMemory(): TaskWorkingMemory = workingMemory
-    
-    private fun tryCopyFromUI(): String {
-        return screenReader.extractAllText()
+
+    private fun tryCopyFromUI(reader: ScreenReader): String {
+        return reader.extractAllText()
     }
-    
-    private fun tryShareFromUI(): String {
-        return screenReader.extractAllText()
+
+    private fun tryShareFromUI(reader: ScreenReader): String {
+        return reader.extractAllText()
     }
 }
