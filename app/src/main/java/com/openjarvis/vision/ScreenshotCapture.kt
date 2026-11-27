@@ -71,12 +71,15 @@ class ScreenshotCapture(private val context: Context) {
         val surface = imageReader?.surface ?: return null
         
         try {
+            val windowManager = context.getSystemService(WindowManager::class.java)
+            val displayMetrics = DisplayMetrics()
+            windowManager.defaultDisplay.getRealMetrics(displayMetrics)
             mediaProjection?.createVirtualDisplay(
                 "Screenshot",
-                surface.width,
-                surface.height,
-                surface.allocation,
-                surface.allocation,
+                displayMetrics.widthPixels,
+                displayMetrics.heightPixels,
+                displayMetrics.densityDpi,
+                android.hardware.display.DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 surface,
                 null,
                 handler
