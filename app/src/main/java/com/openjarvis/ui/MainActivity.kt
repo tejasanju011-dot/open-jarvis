@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.view.WindowCompat
 import com.openjarvis.accessibility.JarvisAccessibilityService
+import com.openjarvis.diagnostics.DiagnosticLogger
 import com.openjarvis.agent.AgentCore
 import com.openjarvis.agent.AgentState
 import com.openjarvis.graphify.GraphifyRepository
@@ -33,6 +34,8 @@ class MainActivity : ComponentActivity() {
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        DiagnosticLogger.initialize(applicationContext)
+        DiagnosticLogger.info(applicationContext, "MainActivity onCreate")
         
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
