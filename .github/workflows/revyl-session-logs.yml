@@ -1,0 +1,39 @@
+name: Export Revyl Session Logs
+
+on:
+  workflow_dispatch:
+    inputs:
+      session_id:
+        description: Revyl device session ID
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  export-session-logs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Revyl CLI
+        run: |
+          curl -fsSL https://revyl.com/install.sh | sh
+          echo "$HOME/.revyl/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch session logs and report
+        env:
+          REVYL_API_KEY: ${{ secrets.REVYL_API_KEY }}
+          REVYL_SESSION_ID: ${{ inputs.session_id }}
+        run: |
+          mkdir -p revyl-session-evidence
+          revyl device logs --session-id "$REVYL_SESSION_ID" --no-follow --json > revyl-session-evidence/device-logs.json
+          revyl device report --session-id "$REVYL_SESSION_ID" --json > revyl-session-evidence/session-report.json
+
+      - name: Upload Revyl session evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: revyl-session-${{ inputs.session_id }}
+          path: revyl-session-evidence/
+          if-no-files-found: warn
+          retention-days: 30
