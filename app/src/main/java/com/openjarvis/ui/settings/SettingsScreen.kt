@@ -35,6 +35,8 @@ import com.openjarvis.llm.UniversalAdapter
 import com.openjarvis.ui.theme.VoidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 @Composable
 fun SettingsScreen(
     onNavigateBack: () -> Unit,
@@ -132,6 +134,7 @@ fun SettingsScreen(
                 Spacer(modifier = Modifier.height(24.dp))
                 
                 TestConnectionButton(
+                    providerName = selectedProvider,
                     apiKey = apiKey,
                     baseUrl = baseUrl,
                     model = model,
@@ -577,13 +580,16 @@ fun FloatingLabelTextField(
 
 @Composable
 private fun TestConnectionButton(
+    providerName: String,
     apiKey: String,
     baseUrl: String,
     model: String,
     onSave: (String, String, String, String) -> Unit
 ) {
     var testState by remember { mutableStateOf<TestState>(TestState.Idle) }
-    
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
     val borderColor by animateColorAsState(
         targetValue = when (testState) {
             is TestState.Idle -> VoidColor.VioletDim
@@ -594,25 +600,44 @@ private fun TestConnectionButton(
         animationSpec = tween(200),
         label = "btn_border"
     )
-    
+
     val textColor = when (testState) {
-        is TestState.Idle -> VoidColor.Violet
-        is TestState.Loading -> VoidColor.Violet
+        is TestState.Idle, is TestState.Loading -> VoidColor.Violet
         is TestState.Success -> VoidColor.Green
         is TestState.Error -> VoidColor.Red
     }
-    
+
     OutlinedButton(
         onClick = {
-            onSave("Groq", baseUrl, apiKey, model)
-            testState = TestState.Success(150)
+            if (apiKey.isBlank() && providerName != "Ollama (Local)" && providerName != "Local (LlamaCpp)") {
+                testState = TestState.Error("Enter your API key")
+            } else {
+                testState = TestState.Loading
+                scope.launch {
+                    try {
+                        val adapter = UniversalAdapter(context)
+                        adapter.saveSettings(providerName, baseUrl, apiKey, model)
+                        val result = adapter.testConnection()
+                        result.fold(
+                            onSuccess = { latency ->
+                                onSave(providerName, baseUrl, apiKey, model)
+                                testState = TestState.Success(latency)
+                            },
+                            onFailure = { error ->
+                                testState = TestState.Error(error.message ?: "Connection failed")
+                            }
+                        )
+                    } catch (error: Exception) {
+                        testState = TestState.Error(error.message ?: "Connection failed")
+                    }
+                }
+            }
         },
+        enabled = testState !is TestState.Loading,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, borderColor),
-        colors = ButtonDefaults.outlinedButtonColors(
-            contentColor = textColor
-        )
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = textColor)
     ) {
         when (val state = testState) {
             is TestState.Idle -> Text("Test Connection")
@@ -626,9 +651,7 @@ private fun TestConnectionButton(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("Connected — ${state.ms}ms")
             }
-            is TestState.Error -> {
-                Text("Failed — check key")
-            }
+            is TestState.Error -> Text("Failed — ${state.message}")
         }
     }
 }
