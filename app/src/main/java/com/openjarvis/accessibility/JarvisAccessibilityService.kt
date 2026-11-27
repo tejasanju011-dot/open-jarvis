@@ -49,6 +49,18 @@ class JarvisAccessibilityService : AccessibilityService() {
         }
     }
 
+    suspend fun waitForAppForeground(packageName: String, timeoutMs: Long = 5000L): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            val rootNode = rootInActiveWindow
+            val foregroundPackage = rootNode?.packageName?.toString()
+            rootNode?.recycle()
+            if (foregroundPackage == packageName) return true
+            kotlinx.coroutines.delay(250)
+        }
+        return false
+    }
+
     fun openAppByLabel(label: String): Boolean {
         val pm = packageManager
         val intent = Intent(Intent.ACTION_MAIN, null).apply {
