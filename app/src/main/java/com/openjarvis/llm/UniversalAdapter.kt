@@ -7,6 +7,13 @@ import androidx.security.crypto.MasterKey
 import com.openjarvis.llm.providers.*
 import com.openjarvis.local.ModelManager
 
+data class SavedProviderSettings(
+    val name: String,
+    val baseUrl: String,
+    val apiKey: String,
+    val model: String
+)
+
 class UniversalAdapter(private val context: Context) {
 
     private val masterKey = MasterKey.Builder(context)
@@ -75,6 +82,16 @@ class UniversalAdapter(private val context: Context) {
             putString("provider_model", model)
             apply()
         }
+    }
+
+    fun getSavedSettings(): SavedProviderSettings {
+        return SavedProviderSettings(
+            name = prefs.getString("provider_name", "Groq") ?: "Groq",
+            baseUrl = prefs.getString("provider_base_url", "") ?: "",
+            apiKey = prefs.getString("provider_api_key", "") ?: "",
+            model = prefs.getString("provider_model", "llama-3.1-70b-versatile")
+                ?: "llama-3.1-70b-versatile"
+        )
     }
 
     fun getProviderName(): String {
