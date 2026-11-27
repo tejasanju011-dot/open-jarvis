@@ -14,6 +14,7 @@ import com.openjarvis.intelligence.AppAnalyzer
 import com.openjarvis.intelligence.TaskRouter
 import com.openjarvis.intelligence.TaskWorkingMemory
 import com.openjarvis.llm.UniversalAdapter
+import com.openjarvis.diagnostics.DiagnosticLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -78,7 +79,10 @@ RULES:
 
         scope.launch {
             taskMutex.withLock {
+                var stage = "starting"
+                DiagnosticLogger.info(context, "Agent command execution started")
                 try {
+                    stage = "sanitizing command"
                     val sanitized = PromptSanitizer.sanitize(cleanCommand)
 
                     when (sanitized) {
@@ -104,16 +108,22 @@ RULES:
                         else -> cleanCommand
                     }
 
+                    stage = "analyzing task"
+                    DiagnosticLogger.info(context, "Agent stage: $stage")
                     _state.value = AgentState.Running("Analyzing task...")
 
                     val plan = taskRouter.analyze(commandToRun)
 
+                    stage = "reading screen"
+                    DiagnosticLogger.info(context, "Agent stage: $stage")
                     _state.value = AgentState.Running("Reading screen...")
 
                     val screenText = withContext(Dispatchers.IO) {
                         getScreenReader()?.extractAllText() ?: ""
                     }
 
+                    stage = "getting context"
+                    DiagnosticLogger.info(context, "Agent stage: $stage")
                     _state.value = AgentState.Running("Getting context...")
 
                     val memoryContext =
@@ -132,6 +142,8 @@ RULES:
                             }
                         )
 
+                    stage = "requesting Groq completion"
+                    DiagnosticLogger.info(context, "Agent stage: $stage; provider=${universalAdapter.getProviderName()}")
                     _state.value = AgentState.Running("Thinking...")
 
                     val startTime = System.currentTimeMillis()
@@ -143,6 +155,8 @@ RULES:
 
                     result.fold(
                         onSuccess = { rawJson ->
+                            stage = "validating model response"
+                            DiagnosticLogger.info(context, "Groq completion returned; validating response")
 
                             val latency =
                                 System.currentTimeMillis() - startTime
@@ -219,6 +233,10 @@ RULES:
                         },
 
                         onFailure = { error ->
+                            DiagnosticLogger.error(
+                                context,
+                                "Groq completion failed: type=${error.javaClass.simpleName}, message=${error.message ?: "<no message>"}"
+                            )
 
                             val msg = when {
                                 error.message?.contains("401") == true ->
@@ -234,7 +252,7 @@ RULES:
                                     "Network error — check connection"
 
                                 else ->
-                                    error.message ?: "Unknown error"
+                                    error.message ?: "Request failed (${error.javaClass.simpleName})"
                             }
 
                             _state.value = AgentState.Error(msg)
@@ -249,9 +267,13 @@ RULES:
                     )
 
                 } catch (e: Exception) {
-
+                    DiagnosticLogger.error(
+                        context,
+                        "Agent failed at stage=$stage: type=${e.javaClass.simpleName}, message=${e.message ?: "<no message>"}",
+                        e
+                    )
                     _state.value = AgentState.Error(
-                        e.message ?: "Unknown error"
+                        e.message ?: "Agent failed at $stage (${e.javaClass.simpleName})"
                     )
 
                     graphifyRepo.logTask(
