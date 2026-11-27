@@ -623,15 +623,24 @@ private fun TestConnectionButton(
     model: String,
     onSave: (String, String, String, String) -> Unit
 ) {
-    var testState by remember { mutableStateOf<TestState>(TestState.Idle) }
     val context = LocalContext.current
+    val adapter = remember(context) { UniversalAdapter(context) }
+    var testState by remember(providerName, apiKey, baseUrl, model) {
+        mutableStateOf<TestState>(
+            if (adapter.isConnectionVerified(providerName, baseUrl, apiKey, model)) {
+                TestState.Verified
+            } else {
+                TestState.Idle
+            }
+        )
+    }
     val scope = rememberCoroutineScope()
 
     val borderColor by animateColorAsState(
         targetValue = when (testState) {
             is TestState.Idle -> VoidColor.VioletDim
             is TestState.Loading -> VoidColor.Violet
-            is TestState.Success -> VoidColor.Green
+            is TestState.Success, TestState.Verified -> VoidColor.Green
             is TestState.Error -> VoidColor.Red
         },
         animationSpec = tween(200),
@@ -640,7 +649,7 @@ private fun TestConnectionButton(
 
     val textColor = when (testState) {
         is TestState.Idle, is TestState.Loading -> VoidColor.Violet
-        is TestState.Success -> VoidColor.Green
+        is TestState.Success, TestState.Verified -> VoidColor.Green
         is TestState.Error -> VoidColor.Red
     }
 
@@ -652,12 +661,12 @@ private fun TestConnectionButton(
                 testState = TestState.Loading
                 scope.launch {
                     try {
-                        val adapter = UniversalAdapter(context)
                         adapter.saveSettings(providerName, baseUrl, apiKey, model)
                         val result = adapter.testConnection()
                         result.fold(
                             onSuccess = { latency ->
                                 onSave(providerName, baseUrl, apiKey, model)
+                                adapter.markConnectionVerified(providerName, baseUrl, apiKey, model)
                                 testState = TestState.Success(latency)
                             },
                             onFailure = { error ->
@@ -683,6 +692,11 @@ private fun TestConnectionButton(
                 strokeWidth = 2.dp,
                 color = VoidColor.Violet
             )
+            TestState.Verified -> {
+                Icon(Icons.Default.Check, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Previously connected · Tap to retest")
+            }
             is TestState.Success -> {
                 Icon(Icons.Default.Check, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
@@ -695,6 +709,7 @@ private fun TestConnectionButton(
 
 sealed class TestState {
     data object Idle : TestState()
+    data object Verified : TestState()
     data object Loading : TestState()
     data class Success(val ms: Long) : TestState()
     data class Error(val message: String) : TestState()
