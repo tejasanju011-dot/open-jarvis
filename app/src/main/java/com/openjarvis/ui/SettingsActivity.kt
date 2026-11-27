@@ -11,6 +11,7 @@ import androidx.core.view.WindowCompat
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.openjarvis.R
+import com.openjarvis.diagnostics.DiagnosticLogger
 import com.openjarvis.ui.settings.SettingsScreen
 import com.openjarvis.ui.theme.OpenJarvisTheme
 
@@ -21,6 +22,8 @@ class SettingsActivity : ComponentActivity() {
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        DiagnosticLogger.initialize(applicationContext)
+        DiagnosticLogger.info(applicationContext, "SettingsActivity opened")
         
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
