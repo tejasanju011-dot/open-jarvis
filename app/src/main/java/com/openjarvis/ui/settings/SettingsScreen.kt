@@ -33,7 +33,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openjarvis.llm.UniversalAdapter
 import com.openjarvis.ui.theme.VoidColor
-
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 @Composable
 fun SettingsScreen(
     onNavigateBack: () -> Unit,
@@ -548,9 +549,9 @@ fun FloatingLabelTextField(
                     color = VoidColor.TextSecondary
                 ),
                 modifier = Modifier.graphicsLayer {
-                    translationY = labelOffset.dp.toPx()
-                    scaleX = labelScale
-                    scaleY = labelScale
+    translationY = labelOffset * LocalDensity.current.density
+    scaleX = labelScale
+    scaleY = labelScale
                 }
             )
             
@@ -566,8 +567,8 @@ fun FloatingLabelTextField(
                     fontSize = 14.sp,
                     color = VoidColor.TextPrimary
                 ),
-                visualTransformation = if (isPassword && !showPassword) 
-                    PasswordVisualTransformation() else VisualTransformation.None
+                visualTransformation = if (isPassword)
+    PasswordVisualTransformation() else VisualTransformation.None
             )
         }
     }
