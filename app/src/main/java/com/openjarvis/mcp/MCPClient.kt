@@ -140,10 +140,7 @@ class MCPClient(
                     return@withContext "Error: ${json.getJSONObject("error").optString("message")}"
                 }
                 
-                json.optJSONArray("result")
-                    ?.optJSONObject(0)
-                    ?.optString("content")
-                    ?: "Tool executed"
+                json.optJSONObject("result")?.optJSONArray("content")?.optJSONObject(0)?.optString("text") ?: "Tool executed"
             }
         } catch (e: Exception) {
             "Error: ${e.message}"
