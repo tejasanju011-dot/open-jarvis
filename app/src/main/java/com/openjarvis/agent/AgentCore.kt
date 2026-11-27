@@ -391,9 +391,15 @@ RULES:
                         return
                     }
 
-                    action.text?.let {
-                        service.tapByText(it)
+                    val targetText = action.text
+                    if (targetText.isNullOrBlank() || !service.tapByText(targetText)) {
+                        _state.value = AgentState.Error(
+                            "Could not find or tap '$targetText' on the current screen."
+                        )
+                        return
                     }
+                    // Allow the destination screen or search field to finish opening.
+                    delay(900)
                 }
 
                 Action.TYPE -> {
@@ -404,8 +410,12 @@ RULES:
                         return
                     }
 
-                    action.value?.let {
-                        service.typeText(it)
+                    val textToType = action.value
+                    if (textToType.isNullOrEmpty() || !service.typeText(textToType)) {
+                        _state.value = AgentState.Error(
+                            "Could not enter text. Tap the search or input field first, then try again."
+                        )
+                        return
                     }
                 }
 
