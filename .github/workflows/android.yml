@@ -49,8 +49,29 @@ jobs:
               -keyalg RSA -keysize 2048 -validity 10000
           fi
 
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Run unit tests
+        run: chmod +x gradlew && ./gradlew --no-daemon testDebugUnitTest
+
       - name: Build debug APK
-        run: chmod +x gradlew && ./gradlew --no-daemon assembleDebug
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Upload unit test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-jarvis-unit-test-reports
+          path: app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: ignore
 
       - name: Upload APK
         if: success()
