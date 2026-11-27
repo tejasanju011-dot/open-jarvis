@@ -94,18 +94,47 @@ class JarvisAccessibilityService : AccessibilityService() {
 
     fun typeText(text: String): Boolean {
         val rootNode = rootInActiveWindow ?: return false
-        val focused = rootNode.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-        if (focused != null) {
-            val arguments = android.os.Bundle().apply {
-                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        try {
+            val focused = rootNode.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            val editable = focused ?: findEditableNode(rootNode)
+            if (editable == null) return false
+
+            if (!editable.isFocused) {
+                editable.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
             }
-            val result = focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-            focused.recycle()
+            val arguments = android.os.Bundle().apply {
+                putCharSequence(
+                    AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                    text
+                )
+            }
+            return editable.performAction(
+                AccessibilityNodeInfo.ACTION_SET_TEXT,
+                arguments
+            )
+        } finally {
             rootNode.recycle()
-            return result
         }
-        rootNode.recycle()
-        return false
+    }
+
+    private fun findEditableNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(AccessibilityNodeInfo.obtain(root))
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            if (node.isEditable && node.isEnabled && node.isVisibleToUser) {
+                // Return a fresh copy; the caller owns and recycles it.
+                val result = AccessibilityNodeInfo.obtain(node)
+                node.recycle()
+                queue.forEach { it.recycle() }
+                return result
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.add(it) }
+            }
+            node.recycle()
+        }
+        return null
     }
 
     fun pressBack() = performGlobalAction(GLOBAL_ACTION_BACK)
