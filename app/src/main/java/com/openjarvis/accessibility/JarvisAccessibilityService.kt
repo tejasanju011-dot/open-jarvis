@@ -111,7 +111,7 @@ class JarvisAccessibilityService : AccessibilityService() {
             return editable.performAction(
                 AccessibilityNodeInfo.ACTION_SET_TEXT,
                 arguments
-            )
+            ).also { editable.recycle() }
         } finally {
             rootNode.recycle()
         }
