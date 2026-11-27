@@ -67,14 +67,14 @@ jobs:
         env:
           ANDROID_I_WANT_MY_TCG: 'yes'
         with:
-          api-level: 34
+          api-level: 28
           target: google_apis
-          arch: x86_64
+          arch: x86
           profile: pixel_2
           cores: 2
-          ram-size: 2048
-          heap-size: 512
-          emulator-boot-timeout: 300
+          ram-size: 1536
+          heap-size: 384
+          emulator-boot-timeout: 600
           emulator-options: -no-window -no-audio -no-boot-anim -camera-back none -camera-front none
           disable-animations: true
           script: ./gradlew --no-daemon connectedDebugAndroidTest
