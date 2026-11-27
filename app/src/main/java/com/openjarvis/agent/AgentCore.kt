@@ -98,15 +98,13 @@ RULES:
                         is PromptSanitizer.SanitizeResult.Clean -> {}
                     }
 
-                    val commandToRun = when (sanitized) {
-                        is PromptSanitizer.SanitizeResult.Suspicious ->
-                            sanitized.sanitized
-
-                        is PromptSanitizer.SanitizeResult.Clean ->
-                            sanitized.text
-
+                    val sanitizedCommand = when (sanitized) {
+                        is PromptSanitizer.SanitizeResult.Suspicious -> sanitized.sanitized
+                        is PromptSanitizer.SanitizeResult.Clean -> sanitized.text
                         else -> cleanCommand
                     }
+                    // "Go back to YouTube" means navigate to YouTube, not Android Back.
+                    val commandToRun = normalizeAppNavigationCommand(sanitizedCommand)
 
                     stage = "analyzing task"
                     DiagnosticLogger.info(context, "Agent stage: $stage")
@@ -322,10 +320,8 @@ RULES:
             when (action.action) {
 
                 Action.OPEN_APP -> {
-                    val packageName = action.packageName
-                        ?: action.label?.let {
-                            findPackageByLabel(it)
-                        }
+                    var packageName = action.packageName
+                        ?: action.label?.let { findPackageByLabel(it) }
 
                     if (packageName == null) {
                         _state.value = AgentState.Error(
@@ -341,7 +337,16 @@ RULES:
                         return
                     }
 
-                    val launched = service.openAppByPackage(packageName)
+                    var launched = service.openAppByPackage(packageName)
+                    // The model may return an outdated or incorrect package name.
+                    // Retry using the installed launcher app matching its visible label.
+                    if (!launched && !action.label.isNullOrBlank()) {
+                        val resolvedPackage = findPackageByLabel(action.label!!)
+                        if (resolvedPackage != null && resolvedPackage != packageName) {
+                            packageName = resolvedPackage
+                            launched = service.openAppByPackage(packageName)
+                        }
+                    }
                     if (!launched) {
                         DiagnosticLogger.error(
                             context,
@@ -474,6 +479,12 @@ RULES:
 
             delay(500)
         }
+    }
+
+    private fun normalizeAppNavigationCommand(command: String): String {
+        val match = Regex("(?i)^\\\\s*(?:please\\\\s+)?go\\\\s+back\\\\s+to\\\\s+(.+?)\\\\s*$").matchEntire(command)
+        val target = match?.groupValues?.getOrNull(1)?.trim().orEmpty()
+        return if (target.isNotBlank()) "open $target" else command
     }
 
     private fun findPackageByLabel(label: String): String? {
