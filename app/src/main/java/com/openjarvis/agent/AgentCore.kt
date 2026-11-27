@@ -355,7 +355,22 @@ RULES:
 
                     DiagnosticLogger.info(
                         context,
-                        "App launch request accepted: package=$packageName"
+                        "App launch request accepted; verifying foreground package=$packageName"
+                    )
+                    val reachedForeground = service.waitForAppForeground(packageName)
+                    if (!reachedForeground) {
+                        DiagnosticLogger.error(
+                            context,
+                            "App did not reach foreground within timeout: package=$packageName"
+                        )
+                        _state.value = AgentState.Error(
+                            "${action.label ?: packageName} launch was requested, but it did not appear on screen. Check Android restrictions and try again."
+                        )
+                        return
+                    }
+                    DiagnosticLogger.info(
+                        context,
+                        "App foreground verified: package=$packageName"
                     )
                     graphifyRepo.logAppOpened(
                         packageName,
