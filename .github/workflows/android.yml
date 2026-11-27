@@ -62,23 +62,7 @@ jobs:
       - name: Run unit tests
         run: chmod +x gradlew && ./gradlew --no-daemon testDebugUnitTest
 
-      - name: Run Android emulator launch test
-        uses: reactivecircus/android-emulator-runner@v2
-        env:
-          ANDROID_I_WANT_MY_TCG: 'yes'
-        with:
-          api-level: 28
-          target: google_apis
-          arch: x86
-          profile: pixel_2
-          cores: 2
-          ram-size: 1536
-          heap-size: 384
-          emulator-boot-timeout: 600
-          emulator-options: -no-window -no-audio -no-boot-anim -camera-back none -camera-front none
-          disable-animations: true
-          script: ./gradlew --no-daemon connectedDebugAndroidTest
-
+      # Cloud device testing is handled by Revyl; do not boot an emulator in GitHub Actions.
       - name: Build debug APK
         run: ./gradlew --no-daemon assembleDebug
 
