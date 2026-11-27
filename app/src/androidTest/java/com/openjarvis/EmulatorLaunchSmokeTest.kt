@@ -1,8 +1,10 @@
 package com.openjarvis
 
-import android.content.Intent
+import android.provider.Settings
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.openjarvis.accessibility.JarvisAccessibilityService
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -12,34 +14,47 @@ import org.junit.runner.RunWith
 class EmulatorLaunchSmokeTest {
 
     @Test
-    fun androidCanLaunchSettingsAndReportItInForeground() {
+    fun jarvisAccessibilityServiceLaunchesAppAndVerifiesForeground() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        val launchIntent = context.packageManager
-            .getLaunchIntentForPackage("com.android.settings")
+        val component = "${context.packageName}/com.openjarvis.accessibility.JarvisAccessibilityService"
 
-        assertNotNull("Emulator Settings app must have a launch intent", launchIntent)
+        // The emulator is disposable; enable Jarvis' real accessibility service through adb shell.
+        instrumentation.uiAutomation.executeShellCommand(
+            "settings put secure enabled_accessibility_services $component"
+        ).close()
+        instrumentation.uiAutomation.executeShellCommand(
+            "settings put secure accessibility_enabled 1"
+        ).close()
 
-        launchIntent!!.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(launchIntent)
-        instrumentation.waitForIdleSync()
-
-        val deadline = System.currentTimeMillis() + 8000L
-        var foreground = false
-        while (System.currentTimeMillis() < deadline) {
-            val process = instrumentation.uiAutomation
-                .executeShellCommand("dumpsys activity activities")
-            val output = process.inputStream.bufferedReader().use { it.readText() }
-            process.close()
-            if (output.contains("com.android.settings")) {
-                foreground = true
-                break
-            }
+        val serviceDeadline = System.currentTimeMillis() + 15000L
+        var service: JarvisAccessibilityService? = null
+        while (System.currentTimeMillis() < serviceDeadline) {
+            service = JarvisAccessibilityService.instance
+            if (service != null) break
             Thread.sleep(250)
         }
+        assertNotNull(
+            "Jarvis AccessibilityService did not connect after enabling it in emulator settings",
+            service
+        )
+
+        val packageName = "com.android.settings"
+        assertNotNull(
+            "Android Settings must be installed in the emulator",
+            context.packageManager.getLaunchIntentForPackage(packageName)
+        )
 
         assertTrue(
-            "Settings launch was requested but package was not found in foreground activity state",
+            "Jarvis AccessibilityService rejected the Settings launch request",
+            service!!.openAppByPackage(packageName)
+        )
+
+        val foreground = runBlocking {
+            service.waitForAppForeground(packageName, 10000L)
+        }
+        assertTrue(
+            "Jarvis requested the launch but Settings never appeared in the accessibility foreground window",
             foreground
         )
     }
