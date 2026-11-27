@@ -44,6 +44,7 @@ import kotlinx.coroutines.delay
 fun DashboardScreen(
     onStartOverlay: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenTasks: () -> Unit,
     graphifyRepo: GraphifyRepository,
     modifier: Modifier = Modifier
 ) {
@@ -108,6 +109,7 @@ fun DashboardScreen(
         
         BottomNavBar(
             onSettingsClick = onOpenSettings,
+            onTasksClick = onOpenTasks,
             modifier = Modifier.align(Alignment.BottomCenter)
         )
     }
@@ -570,6 +572,7 @@ private fun AppTile(app: AppNode) {
 @Composable
 private fun BottomNavBar(
     onSettingsClick: () -> Unit,
+    onTasksClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -599,7 +602,7 @@ private fun BottomNavBar(
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.clickable {
-                            if (isSettings) onSettingsClick()
+                            if (isSettings) onSettingsClick() else if (item == "Tasks") onTasksClick()
                         }
                     ) {
                         if (isSelected) {
