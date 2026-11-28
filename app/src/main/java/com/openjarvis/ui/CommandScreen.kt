@@ -24,7 +24,7 @@ fun CommandScreen(
 ) {
     var command by remember { mutableStateOf("") }
     var lastCommand by remember { mutableStateOf("") }
-    var sourcePath by remember { mutableStateOf("app/src/main/java/com/openjarvis/") }
+    var sourcePath by remember { mutableStateOf("app/src/main/java/com/openjarvis/agent/AgentCore.kt") }
     var sourceCode by remember { mutableStateOf("") }
     var issueDescription by remember { mutableStateOf("") }
     val selfCodeProposal by agentCore.selfCodeProposal.collectAsState()
