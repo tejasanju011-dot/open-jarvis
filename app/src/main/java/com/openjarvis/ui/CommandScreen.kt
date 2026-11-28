@@ -2,6 +2,8 @@ package com.openjarvis.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +24,11 @@ fun CommandScreen(
 ) {
     var command by remember { mutableStateOf("") }
     var lastCommand by remember { mutableStateOf("") }
+    var sourcePath by remember { mutableStateOf("app/src/main/java/com/openjarvis/") }
+    var sourceCode by remember { mutableStateOf("") }
+    var issueDescription by remember { mutableStateOf("") }
+    val selfCodeProposal by agentCore.selfCodeProposal.collectAsState()
+    val selfCodeStatus by agentCore.selfCodeStatus.collectAsState()
     val agentState by agentCore.state.collectAsState()
     val isRunning = agentState is AgentState.Running
 
@@ -32,6 +39,7 @@ fun CommandScreen(
             .statusBarsPadding()
             .navigationBarsPadding()
             .padding(20.dp)
+            .verticalScroll(rememberScrollState())
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -88,7 +96,7 @@ fun CommandScreen(
             )
         }
 
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(16.dp))
 
         OutlinedTextField(
             value = command,
@@ -113,6 +121,92 @@ fun CommandScreen(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(if (isRunning) "Working…" else "Send command")
+        }
+
+        Spacer(Modifier.height(28.dp))
+        Divider(color = VoidColor.Void800)
+        Spacer(Modifier.height(16.dp))
+        Text("SELF-CODE WORKSPACE", color = VoidColor.Violet, fontWeight = FontWeight.Bold)
+        Text(
+            "Give Jarvis a source file and describe its bug. It will create a reviewable replacement proposal, not modify the installed app.",
+            color = VoidColor.TextSecondary
+        )
+        Spacer(Modifier.height(10.dp))
+        OutlinedTextField(
+            value = sourcePath,
+            onValueChange = { sourcePath = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Source file path") },
+            singleLine = true
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = issueDescription,
+            onValueChange = { issueDescription = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Describe the error") },
+            minLines = 2,
+            maxLines = 4
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = sourceCode,
+            onValueChange = { sourceCode = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Paste current source code") },
+            minLines = 5,
+            maxLines = 10
+        )
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = { agentCore.proposeCodeFix(sourcePath.trim(), sourceCode, issueDescription.trim()) },
+            enabled = sourcePath.isNotBlank() && sourceCode.isNotBlank() &&
+                issueDescription.isNotBlank() && !selfCodeStatus.contains("Analyzing"),
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Generate code-fix proposal") }
+        Spacer(Modifier.height(8.dp))
+        Text(selfCodeStatus, color = VoidColor.TextSecondary)
+        selfCodeProposal?.let { proposal ->
+            Spacer(Modifier.height(12.dp))
+            Surface(
+                color = VoidColor.Void800,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("PROPOSAL REVIEW", color = VoidColor.Violet, fontWeight = FontWeight.Bold)
+                    Text("File: ${proposal.relativePath}", color = VoidColor.TextPrimary)
+                    Text("SHA-256: ${proposal.sha256}", color = VoidColor.TextDisabled)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = proposal.content,
+                        onValueChange = {},
+                        readOnly = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Proposed replacement (read-only)") },
+                        minLines = 6,
+                        maxLines = 12
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Approval exports this file to Jarvis's private workspace only. It does not apply or run the code.",
+                        color = VoidColor.TextSecondary
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            agentCore.approveSelfCodeProposal(proposal.id).onSuccess {
+                                sourceCode = ""
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Approve & export privately") }
+                    TextButton(
+                        onClick = { agentCore.rejectSelfCodeProposal(proposal.id) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Reject proposal") }
+                }
+            }
         }
     }
 }
