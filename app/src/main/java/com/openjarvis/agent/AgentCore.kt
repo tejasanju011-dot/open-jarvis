@@ -395,9 +395,30 @@ RULES:
                     }
 
                     val targetText = action.text
-                    if (targetText.isNullOrBlank() || !service.tapByText(targetText)) {
+                    if (targetText.isNullOrBlank()) {
+                        _state.value = AgentState.Error("Tap action has no target text.")
+                        return
+                    }
+
+                    // Self-healing retry: transient Android window/layout updates can
+                    // make the first accessibility lookup miss. Retry once after refresh.
+                    var tapped = service.tapByText(targetText)
+                    if (!tapped) {
+                        DiagnosticLogger.warn(
+                            context,
+                            "Self-healing: tap target not found; retrying once: $targetText"
+                        )
+                        delay(700)
+                        tapped = service.tapByText(targetText)
+                    }
+                    if (!tapped) {
+                        val visibleText = getScreenReader()?.extractAllText().orEmpty()
+                        DiagnosticLogger.error(
+                            context,
+                            "Self-healing failed for tap target='$targetText'; visibleText=${visibleText.take(1200)}"
+                        )
                         _state.value = AgentState.Error(
-                            "Could not find or tap '$targetText' on the current screen."
+                            "I couldn't tap '$targetText'. I recorded the visible screen text for diagnosis."
                         )
                         return
                     }
@@ -414,9 +435,27 @@ RULES:
                     }
 
                     val textToType = action.value
-                    if (textToType.isNullOrEmpty() || !service.typeText(textToType)) {
+                    if (textToType.isNullOrEmpty()) {
+                        _state.value = AgentState.Error("Type action has no text.")
+                        return
+                    }
+                    var typed = service.typeText(textToType)
+                    if (!typed) {
+                        DiagnosticLogger.warn(
+                            context,
+                            "Self-healing: editable field rejected text; retrying once"
+                        )
+                        delay(500)
+                        typed = service.typeText(textToType)
+                    }
+                    if (!typed) {
+                        val visibleText = getScreenReader()?.extractAllText().orEmpty()
+                        DiagnosticLogger.error(
+                            context,
+                            "Self-healing failed to type; visibleText=${visibleText.take(1200)}"
+                        )
                         _state.value = AgentState.Error(
-                            "Could not enter text. Tap the search or input field first, then try again."
+                            "I couldn't enter the text. I recorded the visible screen text for diagnosis."
                         )
                         return
                     }
