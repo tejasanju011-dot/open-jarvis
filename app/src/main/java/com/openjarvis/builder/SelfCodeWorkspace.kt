@@ -117,7 +117,7 @@ class SelfCodeWorkspace(context: Context) {
     }
 
     private fun validateRelativePath(path: String): String {
-        val normalized = path.replace('\\\\', '/').trim()
+        val normalized = path.replace('\\', '/').trim()
         require(normalized.isNotBlank()) { "File path is required" }
         require(!normalized.startsWith("/") && !normalized.contains(":")) { "Absolute paths are not allowed" }
         val segments = normalized.split('/')
