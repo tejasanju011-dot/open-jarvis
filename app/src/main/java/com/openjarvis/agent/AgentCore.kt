@@ -14,6 +14,7 @@ import com.openjarvis.intelligence.AppAnalyzer
 import com.openjarvis.intelligence.TaskRouter
 import com.openjarvis.intelligence.TaskWorkingMemory
 import com.openjarvis.llm.UniversalAdapter
+import com.openjarvis.builder.SelfCodeWorkspace
 import com.openjarvis.diagnostics.DiagnosticLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +34,12 @@ class AgentCore(private val context: Context) {
     private val taskRouter = TaskRouter(context)
     private val appAnalyzer = AppAnalyzer(context)
     private val aiAppInteractor = AIAppInteractor(context)
+    private val selfCodeWorkspace = SelfCodeWorkspace(context)
+
+    private val _selfCodeProposal = MutableStateFlow<SelfCodeWorkspace.Proposal?>(null)
+    val selfCodeProposal: StateFlow<SelfCodeWorkspace.Proposal?> = _selfCodeProposal
+    private val _selfCodeStatus = MutableStateFlow("Self-code workspace ready")
+    val selfCodeStatus: StateFlow<String> = _selfCodeStatus
 
     private var workingMemory = TaskWorkingMemory()
 
@@ -285,6 +292,70 @@ RULES:
                     )
                 }
             }
+        }
+    }
+
+    /** Generate a replacement source proposal; never execute or auto-apply it. */
+    fun proposeCodeFix(relativePath: String, sourceCode: String, issueDescription: String) {
+        scope.launch {
+            if (sourceCode.isBlank() || issueDescription.isBlank()) { _selfCodeStatus.value = "Provide source code and describe the error."; return@launch }
+            if (sourceCode.length > 120_000 || issueDescription.length > 4_000) { _selfCodeStatus.value = "Input too large. Keep source under 120,000 characters."; return@launch }
+            _selfCodeStatus.value = "Analyzing source and preparing a fix..."
+            DiagnosticLogger.info(context, "Self-code proposal requested for path=$relativePath")
+            val system = """
+You are Jarvis's restricted code-repair assistant.
+Return ONLY the complete replacement contents for the one supplied source file.
+Preserve language, package, imports, public APIs and existing behavior unless the bug requires a change.
+Do not add dependencies, network calls, shell execution, reflection, dynamic code loading, secrets, permissions,
+manifest/build-script changes, or code that modifies files outside the app's private proposal workspace.
+Do not claim the code was compiled or tested. If source is insufficient, return the original source unchanged.
+""".trimIndent()
+            val user = """
+ISSUE:
+${issueDescription.take(4000)}
+
+SOURCE PATH:
+$relativePath
+
+CURRENT SOURCE:
+${sourceCode.take(120000)}
+""".trimIndent()
+            universalAdapter.complete(system, user).fold(
+                onSuccess = { raw ->
+                    val proposed = raw.trim().removePrefix("```kotlin").removePrefix("```java").removePrefix("```").removeSuffix("```").trim()
+                    try {
+                        val proposal = selfCodeWorkspace.createProposal(relativePath, proposed)
+                        _selfCodeProposal.value = proposal
+                        _selfCodeStatus.value = "Proposal ready (${proposal.sha256.take(12)}). Review before exporting."
+                        DiagnosticLogger.info(context, "Self-code proposal created id=${proposal.id} path=${proposal.relativePath}")
+                    } catch (e: Exception) {
+                        _selfCodeStatus.value = "Proposal rejected: ${e.message ?: "unsafe path or invalid content"}"
+                        DiagnosticLogger.warn(context, "Self-code proposal rejected: ${e.message}")
+                    }
+                },
+                onFailure = { error ->
+                    _selfCodeStatus.value = "Could not generate proposal: ${error.message ?: "AI request failed"}"
+                    DiagnosticLogger.error(context, "Self-code generation failed: ${error.message}")
+                }
+            )
+        }
+    }
+
+    /** Export only after the user explicitly approves in the review UI. */
+    fun approveSelfCodeProposal(id: String): Result<String> = runCatching {
+        val current = _selfCodeProposal.value ?: error("There is no proposal to approve")
+        require(current.id == id) { "Proposal changed; review the latest proposal" }
+        val output = selfCodeWorkspace.approveAndExport(id, userApproved = true)
+        _selfCodeStatus.value = "Approved export saved privately: ${output.name}. It has not been applied or executed."
+        DiagnosticLogger.info(context, "User approved self-code proposal export id=$id")
+        output.absolutePath
+    }
+
+    fun rejectSelfCodeProposal(id: String) {
+        if (_selfCodeProposal.value?.id == id) {
+            _selfCodeProposal.value = null
+            _selfCodeStatus.value = "Proposal rejected by user."
+            DiagnosticLogger.info(context, "User rejected self-code proposal id=$id")
         }
     }
 
