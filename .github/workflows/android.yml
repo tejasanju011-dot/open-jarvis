@@ -50,6 +50,8 @@ jobs:
               -dname "CN=Android Debug,O=Android,C=US" \
               -keyalg RSA -keysize 2048 -validity 10000
           fi
+          echo "Debug signing certificate fingerprint:"
+          keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | grep -E "SHA256:"
 
       - name: Cache Gradle dependencies
         uses: actions/cache@v4
