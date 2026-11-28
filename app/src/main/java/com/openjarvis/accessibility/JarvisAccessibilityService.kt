@@ -98,6 +98,36 @@ class JarvisAccessibilityService : AccessibilityService() {
             roots.forEach { it.recycle() }
         }
         android.util.Log.w("OpenJarvis", "No tappable accessibility match for: $text")
+
+        // Some Android Settings builds expose the Wi-Fi/Internet row with
+        // incomplete accessibility metadata. Use the platform Settings intent
+        // as a targeted fallback rather than reporting a false tap success.
+        if (openNetworkSettingsFallback(text)) return true
+        return false
+    }
+
+    private fun openNetworkSettingsFallback(target: String): Boolean {
+        val normalized = normalizeForMatch(target)
+        val isNetworkTarget = normalized.contains("wifi") ||
+            normalized.contains("wi fi") ||
+            normalized.contains("internet") ||
+            normalized.contains("network")
+        if (!isNetworkTarget) return false
+
+        val actions = listOf(
+            android.provider.Settings.ACTION_WIFI_SETTINGS,
+            android.provider.Settings.ACTION_WIRELESS_SETTINGS
+        )
+        for (action in actions) {
+            try {
+                val intent = Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(intent)
+                android.util.Log.i("OpenJarvis", "Opened Android network settings fallback: $action")
+                return true
+            } catch (error: Exception) {
+                android.util.Log.w("OpenJarvis", "Network settings fallback unavailable: $action", error)
+            }
+        }
         return false
     }
 
