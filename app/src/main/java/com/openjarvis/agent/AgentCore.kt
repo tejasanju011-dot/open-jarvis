@@ -454,10 +454,10 @@ RULES:
                             ?: getScreenReader()?.extractAllText().orEmpty()
                         val summaryPrompt = buildString {
                             append("Summarize the following on-screen/page content in response to the user's request. ")
-                            append("Use concise, factual language. If the content is empty, say that no readable page content was found.\\n\\n")
+                            append("Use concise, factual language. If the content is empty, say that no readable page content was found.\n\n")
                             append("USER REQUEST: ")
                             append(prompt.ifBlank { command })
-                            append("\\n\\nPAGE CONTENT:\\n")
+                            append("\n\nPAGE CONTENT:\n")
                             append(pageText.take(12000))
                         }
                         val summaryResult = universalAdapter.complete(
