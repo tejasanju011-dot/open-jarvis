@@ -1,0 +1,106 @@
+
+name: Build OpenJarvis APK
+
+on:
+  push:
+    branches:
+      - jarvis-repair
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK 34
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Restore persistent debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: open-jarvis-debug-keystore-v1-${{ github.repository }}-${{ github.ref_name }}
+
+      - name: Ensure persistent Android debug signing key exists
+        run: |
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -v \
+              -keystore "$HOME/.android/debug.keystore" \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US" \
+              -keyalg RSA -keysize 2048 -validity 10000
+          fi
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Run unit tests
+        run: chmod +x gradlew && ./gradlew --no-daemon testDebugUnitTest
+
+      # Cloud device testing is handled by Revyl; do not boot an emulator in GitHub Actions.
+      # Build after accessibility search-input discovery update.
+      # Trigger CI for the latest accessibility search-input changes.
+      # Verify the current Revyl API key through the upload step on each build.
+      - name: Build debug APK
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Install Revyl CLI
+        run: |
+          curl -fsSL https://revyl.com/install.sh | sh
+          echo "$HOME/.revyl/bin" >> "$GITHUB_PATH"
+
+      - name: Upload APK to Revyl
+        env:
+          REVYL_API_KEY: ${{ secrets.REVYL_API_KEY }}
+          REVYL_ANDROID_APP_ID: 2547c40d-e680-4326-978a-205e26105f8f
+        run: |
+          test -f app/build/outputs/apk/debug/app-debug.apk
+          revyl build upload \
+            --file app/build/outputs/apk/debug/app-debug.apk \
+            --app "$REVYL_ANDROID_APP_ID" \
+            --platform android \
+            --branch jarvis-repair \
+            --version "ci-${GITHUB_SHA::7}" \
+            --yes \
+            --json
+
+      - name: Upload unit test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-jarvis-unit-test-reports
+          path: app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: ignore
+
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-jarvis-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          
