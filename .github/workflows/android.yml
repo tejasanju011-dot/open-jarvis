@@ -35,6 +35,8 @@ jobs:
         with:
           path: ~/.android/debug.keystore
           key: open-jarvis-debug-keystore-v1-${{ github.repository }}-${{ github.ref_name }}
+          restore-keys: |
+            open-jarvis-debug-keystore-v1-${{ github.repository }}-
 
       - name: Ensure persistent Android debug signing key exists
         run: |
