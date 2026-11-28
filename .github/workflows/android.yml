@@ -64,6 +64,7 @@ jobs:
 
       # Cloud device testing is handled by Revyl; do not boot an emulator in GitHub Actions.
       # Build after accessibility search-input discovery update.
+      # Trigger CI for the latest accessibility search-input changes.
       # Verify the current Revyl API key through the upload step on each build.
       - name: Build debug APK
         run: ./gradlew --no-daemon assembleDebug
