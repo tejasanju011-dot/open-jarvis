@@ -93,27 +93,47 @@ class JarvisAccessibilityService : AccessibilityService() {
     }
 
     fun typeText(text: String): Boolean {
-        val rootNode = rootInActiveWindow ?: return false
+        // Some apps (including search UIs) expose the input field in a
+        // separate accessibility window rather than rootInActiveWindow.
+        val roots = mutableListOf<AccessibilityNodeInfo>()
         try {
-            val focused = rootNode.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-            val editable = focused ?: findEditableNode(rootNode)
-            if (editable == null) return false
+            windows.forEach { window ->
+                try {
+                    window.root?.let { roots.add(it) }
+                } catch (error: Exception) {
+                    android.util.Log.w("OpenJarvis", "Could not read accessibility window", error)
+                }
+            }
+            if (roots.isEmpty()) {
+                rootInActiveWindow?.let { roots.add(it) }
+            }
 
-            if (!editable.isFocused) {
-                editable.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+            for (root in roots) {
+                val editable = findEditableNode(root) ?: continue
+                try {
+                    editable.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                    val arguments = android.os.Bundle().apply {
+                        putCharSequence(
+                            AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                            text
+                        )
+                    }
+                    if (editable.performAction(
+                            AccessibilityNodeInfo.ACTION_SET_TEXT,
+                            arguments
+                        )
+                    ) {
+                        android.util.Log.d("OpenJarvis", "Text entered using accessibility set-text")
+                        return true
+                    }
+                } finally {
+                    editable.recycle()
+                }
             }
-            val arguments = android.os.Bundle().apply {
-                putCharSequence(
-                    AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-                    text
-                )
-            }
-            return editable.performAction(
-                AccessibilityNodeInfo.ACTION_SET_TEXT,
-                arguments
-            ).also { editable.recycle() }
+            android.util.Log.w("OpenJarvis", "No editable accessibility field accepted text")
+            return false
         } finally {
-            rootNode.recycle()
+            roots.forEach { it.recycle() }
         }
     }
 
@@ -123,7 +143,6 @@ class JarvisAccessibilityService : AccessibilityService() {
         while (queue.isNotEmpty()) {
             val node = queue.removeFirst()
             if (node.isEditable && node.isEnabled && node.isVisibleToUser) {
-                // Return a fresh copy; the caller owns and recycles it.
                 val result = AccessibilityNodeInfo.obtain(node)
                 node.recycle()
                 queue.forEach { it.recycle() }
