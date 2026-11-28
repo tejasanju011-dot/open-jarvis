@@ -471,6 +471,7 @@ RULES:
                             return
                         }
                         workingMemory.set(outputKey ?: "summary", summary)
+                        workingMemory.set("summary", summary)
                     } else if (packageName != null) {
                         val meta = AIApps.KNOWN_AI_APPS[packageName]
 
