@@ -212,7 +212,7 @@ RULES:
                                 "Executing ${actions.size} actions..."
                             )
 
-                            executeActions(actions)
+                            executeActions(actions, commandToRun)
 
                             if (_state.value !is AgentState.Error) {
                                 graphifyRepo.logTask(
@@ -224,8 +224,11 @@ RULES:
 
                                 analysisEngine.analyzeLastTask()
 
+                                val summary = workingMemory.get("summary")
+                                    ?: workingMemory.get("result")
                                 _state.value = AgentState.Done(
-                                    "Done in ${latency}ms"
+                                    summary?.takeIf { it.isNotBlank() }
+                                        ?: "Done in ${latency}ms"
                                 )
                             }
                         },
@@ -307,7 +310,7 @@ RULES:
         return appAnalyzer.getAICount()
     }
 
-    private suspend fun executeActions(actions: List<Action>) {
+    private suspend fun executeActions(actions: List<Action>, command: String) {
 
         for ((index, action) in actions.withIndex()) {
 
@@ -440,7 +443,35 @@ RULES:
 
                     val outputKey = action.outputKey
 
-                    if (packageName != null) {
+                    val isSummarization = command.contains("summar", ignoreCase = true) ||
+                        command.contains("tl;dr", ignoreCase = true)
+
+                    if (isSummarization) {
+                        // Summaries should be returned inside Jarvis. Do not hand
+                        // the task off to the external ChatGPT app.
+                        val pageText = workingMemory.get("page_text")
+                            ?: workingMemory.get("screen_text")
+                            ?: getScreenReader()?.extractAllText().orEmpty()
+                        val summaryPrompt = buildString {
+                            append("Summarize the following on-screen/page content in response to the user's request. ")
+                            append("Use concise, factual language. If the content is empty, say that no readable page content was found.\\n\\n")
+                            append("USER REQUEST: ")
+                            append(prompt.ifBlank { command })
+                            append("\\n\\nPAGE CONTENT:\\n")
+                            append(pageText.take(12000))
+                        }
+                        val summaryResult = universalAdapter.complete(
+                            "You are Jarvis. Summarize only the supplied page content. Do not ask the user to open another app. Do not invent facts.",
+                            summaryPrompt
+                        )
+                        val summary = summaryResult.getOrElse { error ->
+                            _state.value = AgentState.Error(
+                                "Could not summarize the page: ${error.message ?: "AI request failed"}"
+                            )
+                            return
+                        }
+                        workingMemory.set(outputKey ?: "summary", summary)
+                    } else if (packageName != null) {
                         val meta = AIApps.KNOWN_AI_APPS[packageName]
 
                         if (meta != null) {
